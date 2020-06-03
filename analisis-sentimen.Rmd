@@ -21,7 +21,7 @@ library(textclean)
 
 ```{r, echo=TRUE}
 #import data
-docs<-read_xlsx("Book1.xlsx")
+docs<-read_xlsx("jawabanIsian.xlsx")
 
 #MEMBUAT WORDCLOUD
 #CLEANING DATA
