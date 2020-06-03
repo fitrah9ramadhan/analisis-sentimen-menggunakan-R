@@ -1,0 +1,213 @@
+---
+title: "Analisis Sentimen: Kuliah Daring di Universitas Hasanuddin"
+author: "Fitrah Ramadhan"
+date: "5/11/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+# Load
+
+library(wordcloud)
+library(RColorBrewer)
+library(stringr)
+library(stringi)
+library(readxl)
+library(openxlsx)
+library(tidytext)
+library(tidyverse)
+library(textclean)
+```
+
+```{r, echo=TRUE}
+#import data
+docs<-read_xlsx("Book1.xlsx")
+
+#MEMBUAT WORDCLOUD
+#CLEANING DATA
+docs <- docs$word
+
+#ke huruf kecil dan menghilangkan simbol yg tidak perlu
+docs <- docs %>% 
+  tolower() %>%
+  strip() %>% 
+  replace_emoticon() %>% 
+  replace_number() %>% 
+  strip() %>% 
+  stri_replace_all_fixed(c("not effective", "not very effective", "not yet effective", "not too effective", "not be effective","not fully effective", "does not seem effective","yet very effective", "not so effective","do not run effectively", "has not been effective"), "ineffective", vectorize_all = FALSE)
+
+#mengubah docs kembali ke data frame
+docs <- enframe(docs, value = "word", name = NULL)
+
+#Simpan data bersih diatas
+write.xlsx(docs, "dataBersih.xlsx")
+
+#Tokenize dan menghilangkan stopwords
+words <- docs %>% unnest_tokens(word, word) %>%
+  dplyr::count(word, sort = TRUE) %>% 
+  anti_join(stop_words)
+
+#wordcloud
+words %>% 
+  with(
+    wordcloud(
+      words = word,
+      freq = n,
+      max.words = 100,
+      random.order = FALSE,
+      colors = brewer.pal(name = "Dark2", n=8)
+    )
+  )
+```
+
+```{r}
+#Membuat Fungsi Skoring Sentiment
+positif <- scan("positive-words.txt",what="character",comment.char=";")
+negatif <- scan("negative-words.txt",what="character",comment.char=";")
+kata.positif = c(positif, "effective")
+kata.negatif = c(negatif, "ineffective")
+score.sentiment = function(kalimat2, kata.positif, kata.negatif, .progress='none')
+{
+  require(plyr)
+  require(stringr)
+  scores = laply(kalimat2, function(kalimat, kata.positif, kata.negatif) {
+    kalimat = gsub('[[:punct:]]', '', kalimat)
+    kalimat = gsub('[[:cntrl:]]', '', kalimat)
+    kalimat = gsub('\\d+', '', kalimat)
+    kalimat = tolower(kalimat)
+    
+    list.kata = str_split(kalimat, '\\s+')
+    kata2 = unlist(list.kata)
+    positif.matches = match(kata2, kata.positif)
+    negatif.matches = match(kata2, kata.negatif)
+    positif.matches = !is.na(positif.matches)
+    negatif.matches = !is.na(negatif.matches)
+    score = sum(positif.matches) - (sum(negatif.matches))
+    return(score)
+  }, kata.positif, kata.negatif, .progress=.progress )
+  scores.df = data.frame(score=scores, text=kalimat2)
+  return(scores.df)
+}
+```
+```{r}
+
+hasil = score.sentiment(docs$word, kata.positif, kata.negatif)
+
+hasil$klasifikasi<- ifelse(hasil$score<0, "Negatif",ifelse(hasil$score==0,"Netral","Positif"))
+
+#membuat file excel 
+write.xlsx(hasil, "Skor dan Klasifikasi Sentimen.xlsx")
+```
+
+
+```{r}
+#membuat barplot berdasarkan klasifikasi
+ggplot(hasil, aes(x=klasifikasi))+
+  geom_bar(position = "stack", fill = "#37CCCC")+
+  scale_y_continuous(limits = c(0, 600))+
+  coord_flip()+
+  labs(title = "Klasifikasi Sentimen Terhadap Kuliah Daring di Universitas Hasanuddin", caption = 
+         "(1.135 Responden dari 15 Fakultas)")+
+  xlab(" ")+ ylab("Jumlah")
+
+summary(hasil)
+```
+
+```{r}
+#Visualisasi yang lain
+
+#Histogram Skor Sentimen
+ggplot(hasil, aes(x= hasil$score))+
+  geom_bar(position = "stack", fill="#37CCCC")+
+  geom_vline(xintercept = mean(hasil$score), linetype="dashed", color = "darkgreen")+
+  geom_vline(xintercept = -1, linetype="dashed", color="red")+
+  labs(title = "Histogram Skor Sentimen", caption ="(1.135 Responden dari 15 Fakultas)", subtitle = "mean = -0.1885 dan mode = -1")+
+  xlab("Skor")+
+  ylab("Jumlah")
+
+#Histogram Skor Sentimen per Fakultas
+scoreByFaculty <- read_excel("score by Faculty.xlsx")
+ggplot(scoreByFaculty, aes(x= scoreByFaculty$score))+
+  geom_bar(position = "stack", fill="#37CCCC")+
+  geom_vline(xintercept = mean(scoreByFaculty$score), linetype="dashed", color = "darkgreen")+
+  labs(title = "Histogram Skor Sentimen Berdasarkan Fakultas", caption ="(1.135 Responden dari 15 Fakultas)")+
+  xlab("Skor")+
+  ylab("Jumlah")+
+  facet_wrap(~Fakultas)
+
+#Barplot per fakultas
+ggplot(scoreByFaculty, aes(x=klasifikasi))+
+  geom_bar(position = "stack", fill = "#37CCCC")+
+  scale_y_continuous(limits = c(0, 100))+
+  coord_flip()+
+  labs(title = "Klasifikasi Sentimen Terhadap Kuliah Daring Berdasarkan Fakultas", caption = 
+         "(1.135 Responden dari 15 Fakultas)")+
+  xlab(" ")+ ylab("Jumlah")+
+  facet_wrap(~Fakultas)
+```
+
+
+```{r}
+
+abisatyaNegatif <- read_excel("Negatif Abisatya.xlsx")
+abisatyaNegatif <- abisatyaNegatif$text
+#wordcloud Negatif
+abisatyaNegatif <- abisatyaNegatif %>% 
+  tolower() %>%
+  strip() %>% 
+  replace_emoticon() %>% 
+  replace_number() %>% 
+  strip() %>% 
+  stri_replace_all_fixed(c("not effective", "not very effective", "not yet effective", "not too effective", "not be effective","not fully effective", "does not seem effective","yet very effective", "not so effective","do not run effectively", "has not been effective"), "ineffective", vectorize_all = FALSE)
+
+#mengubah docs kembali ke data frame
+abisatyaNegatif <- enframe(abisatyaNegatif, value = "word", name = NULL)
+
+
+#Tokenize dan menghilangkan stopwords
+tokenNegatif <- abisatyaNegatif %>% 
+  unnest_tokens(word, word) %>%
+  dplyr::count(word, sort = TRUE) %>% 
+  anti_join(stop_words)
+
+#wordcloud
+tokenNegatif %>% 
+  with(
+    wordcloud(
+      words = word,
+      freq = n,
+      max.words = 200,
+      random.order = FALSE,
+      scale = c(4, 0.4),
+      colors = brewer.pal(name = "Dark2", n=8)
+    )
+  )
+```
+
+```{r}
+#wordcloud positif
+abisatyaPositif <- read_excel("Positif Abisatya.xlsx")
+abisatyaPositif <- abisatyaPositif$text
+abisatyaPositif <- enframe(abisatyaPositif, value = "word", name = NULL)
+
+#Tokenize dan menghilangkan stopwords
+tokenPositif <- abisatyaPositif %>% unnest_tokens(input = word, word) %>%
+  dplyr::count(word, sort = TRUE) %>% 
+  anti_join(stop_words)
+
+head(tokenPositif)
+#wordcloud
+tokenPositif %>% 
+  with(
+    wordcloud(
+      words = word,
+      freq = n,
+      max.words = 91,
+      random.order = FALSE,
+      scale = c(4, 0.4),
+      colors = brewer.pal(name = "Dark2", n=8)
+    )
+  )
+```
+
+
